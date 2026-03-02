@@ -187,7 +187,15 @@ func _physics_process(delta):
 		current_speed *= water_speed_mult
 
 	if unit_class == UnitClass.CITIZEN:
+		var current_target = target
 		var move_direction = (retreat_pos - global_position).normalized()
+		
+		# [TACTICS: 전략적 가변성] 사기가 높으면 무작정 뒤로 숨지 않고 전사들 곁에서 응원/지원 시늉 (미끼 역할도 가눙)
+		if morale_type == 1 and is_instance_valid(current_target):
+			# 도망가는 대신 아군 전사와 후방의 중간 지점을 유지
+			var support_pos = (retreat_pos + current_target.global_position) * 0.5
+			move_direction = (support_pos - global_position).normalized()
+			
 		velocity = (move_direction + cached_separation * 1.0).normalized() * current_speed * 0.8
 	elif current_target:
 		var distance = global_position.distance_to(current_target.global_position)
@@ -246,9 +254,14 @@ func perform_attack():
 	if current_elevation > 0: final_damage *= 1.2
 	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
-		# [PROJECTILE INACCURACY] 거리가 멀수록 명중률 저하
+		# [PROJECTILE INACCURACY] 사거리(Range)에 반비례하는 정확도
 		var distance = global_position.distance_to(current_target.global_position)
-		var spread_range = clamp(distance / 15.0, 0.0, 40.0)
+		var actual_range = attack_range
+		if current_elevation > 0: actual_range *= 1.4
+		
+		# 거리가 멀수록 화살이 빗나갈 확률이 기하급수적으로 증가 (0~80픽셀 오차)
+		var dist_ratio = clamp(distance / actual_range, 0.0, 1.0)
+		var spread_range = dist_ratio * dist_ratio * 80.0
 		var random_offset = Vector2(randf_range(-spread_range, spread_range), randf_range(-spread_range, spread_range))
 		
 		var arrow = arrow_scene.instantiate()
