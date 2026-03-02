@@ -16,10 +16,12 @@ var attack_range: float = 20.0
 var damage: float = 10.0
 var attack_cooldown: float = 1.0
 
-# 지형 및 공성 변수
+# 지형 및 스킬 변수
 var current_elevation: int = 0 
 var is_in_water: bool = false
 var blocked_by_wall: bool = false
+var water_speed_mult: float = 0.5
+var volley_timer: float = 0.0
 
 # 상태 및 타이머
 var target: Node2D = null
@@ -45,6 +47,8 @@ var cached_separation: Vector2 = Vector2.ZERO
 
 func _ready():
 	ai_update_timer = randf() * ai_update_interval
+	# 타이머 초기화 (랜덤 오프셋으로 겹치지 않게)
+	volley_timer = randf() * 10.0 
 	setup_class_stats()
 	if team == 0:
 		retreat_pos = safe_zone + Vector2(-150, (randf()-0.5) * 200.0)
@@ -60,22 +64,23 @@ func _ready():
 func setup_class_stats():
 	match unit_class:
 		UnitClass.SWORDMAN:
-			speed = 120.0; attack_range = 25.0; damage = 15.0; health = 100.0
+			speed = 120.0; attack_range = 25.0; damage = 22.0; health = 160.0; water_speed_mult = 0.8
 		UnitClass.SPEARMAN:
-			speed = 100.0; attack_range = 45.0; damage = 12.0; health = 110.0
+			speed = 100.0; attack_range = 45.0; damage = 12.0; health = 110.0; water_speed_mult = 0.5
 		UnitClass.ARCHER:
-			speed = 90.0; attack_range = 300.0; damage = 12.0; health = 80.0; attack_cooldown = 2.0
+			speed = 90.0; attack_range = 300.0; damage = 12.0; health = 80.0; attack_cooldown = 2.0; water_speed_mult = 0.4
 		UnitClass.CAVALRY:
-			speed = 220.0; attack_range = 35.0; damage = 20.0; health = 150.0; attack_cooldown = 1.2
+			speed = 220.0; attack_range = 35.0; damage = 20.0; health = 150.0; attack_cooldown = 1.2; water_speed_mult = 0.3
 		UnitClass.KNIGHT:
-			speed = 130.0; attack_range = 35.0; damage = 25.0; health = 220.0; attack_cooldown = 0.8
+			# [HERO KNIGHT BUFF] 사장님 지시: 1명이 10명을 감당하는 스펙
+			speed = 140.0; attack_range = 40.0; damage = 50.0; health = 1000.0; attack_cooldown = 0.4; water_speed_mult = 0.7
 		UnitClass.PRIEST:
 			speed = 100.0; attack_range = 150.0; damage = -10.0; health = 80.0 
 		UnitClass.CITIZEN:
 			speed = 80.0; attack_range = 0.0; damage = 0.0; health = 50.0
 			if citizen_type == CitizenType.CHILD: health = 30.0
 		UnitClass.SIEGE:
-			speed = 50.0; attack_range = 50.0; damage = 100.0; health = 500.0; attack_cooldown = 4.0
+			speed = 50.0; attack_range = 50.0; damage = 100.0; health = 500.0; attack_cooldown = 4.0; water_speed_mult = 0.2
 
 func _draw():
 	var f = 1.0 if facing_right else -1.0
@@ -105,11 +110,16 @@ func _draw():
 	var right_arm_end = Vector2(8 * f, -5) - Vector2(0, arm_swing)
 	var current_target = duel_target if is_dueling else target
 	
+	# [ARCHER: Side-Stance 비주얼]
+	# 화살을 쏠 때 몸을 옆으로 틀어서 정면 면적을 줄임
+	if unit_class == UnitClass.ARCHER and attack_anim_progress > 0:
+		f *= 0.4 # 시각적으로 얇게 표시
+	
 	if current_target and attack_anim_progress > 0:
 		var target_dir = (current_target.global_position - global_position).normalized()
 		if unit_class == UnitClass.ARCHER:
 			left_arm_end = target_dir * 10.0 + Vector2(0, -5)
-			right_arm_end = -target_dir * 5.0 + Vector2(0, -5)
+			right_arm_end = -target_dir * 3.0 + Vector2(0, -5) # 정면 면적 최소화
 			right_arm_end.x -= sin(attack_anim_progress * PI) * 5 * f
 		else:
 			var swing = sin(attack_anim_progress * PI) * 15.0
@@ -133,7 +143,7 @@ func _draw():
 			draw_line(Vector2(-bow_pull, 0), Vector2(0, 10), current_color, 0.5)
 			draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 		UnitClass.SWORDMAN, UnitClass.KNIGHT:
-			var sword_len = 12 if unit_class == UnitClass.SWORDMAN else 18
+			var sword_len = 16 if unit_class == UnitClass.SWORDMAN else 25
 			var sword_dir = (right_arm_end - arm_origin).normalized()
 			draw_line(right_arm_end, right_arm_end + sword_dir * sword_len, current_color, 2.0)
 		UnitClass.CAVALRY:
@@ -150,9 +160,17 @@ func _physics_process(delta):
 	if morale_timer > 0: 
 		morale_timer -= delta
 		if morale_timer <= 0: morale_type = 0
+	
 	attack_timer -= delta
 	ai_update_timer -= delta
 	
+	# [SKILL: ARCHER Volley]
+	if unit_class == UnitClass.ARCHER:
+		volley_timer += delta
+		if volley_timer >= 12.0: # 12초마다 일제 사격 시도
+			perform_volley()
+			volley_timer = 0.0
+
 	if ai_update_timer <= 0:
 		ai_update_timer = ai_update_interval
 		if not is_dueling: find_closest_target()
@@ -163,7 +181,10 @@ func _physics_process(delta):
 	if rage_timer > 0: current_speed *= 2.2 
 	if morale_type == 1: current_speed *= 1.5
 	elif morale_type == -1: current_speed *= 0.6
-	if is_in_water: current_speed *= 0.5
+	
+	# [지형 효과: 물속] 클래스별 패널티 적용
+	if is_in_water:
+		current_speed *= water_speed_mult
 
 	if unit_class == UnitClass.CITIZEN:
 		var move_direction = (retreat_pos - global_position).normalized()
@@ -180,7 +201,12 @@ func _physics_process(delta):
 		if distance > actual_attack_range:
 			velocity = (move_direction + cached_separation * 1.5).normalized() * current_speed
 		else:
-			velocity = cached_separation * (current_speed * 0.3)
+			# 기사는 스태미너가 좋아 난전 중에도 계속 전진하거나 타이트하게 붙음
+			if unit_class == UnitClass.KNIGHT:
+				velocity = (move_direction * 0.5 + cached_separation * 0.5).normalized() * current_speed * 0.4
+			else:
+				velocity = cached_separation * (current_speed * 0.3)
+				
 			facing_right = (current_target.global_position.x - global_position.x) > 0
 			if attack_timer <= 0:
 				perform_attack()
@@ -220,15 +246,18 @@ func perform_attack():
 	if current_elevation > 0: final_damage *= 1.2
 	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
+		# [PROJECTILE INACCURACY] 거리가 멀수록 명중률 저하
+		var distance = global_position.distance_to(current_target.global_position)
+		var spread_range = clamp(distance / 15.0, 0.0, 40.0)
+		var random_offset = Vector2(randf_range(-spread_range, spread_range), randf_range(-spread_range, spread_range))
+		
 		var arrow = arrow_scene.instantiate()
 		get_parent().add_child(arrow)
-		arrow.setup(global_position + Vector2(0, -10), current_target.global_position, team, final_damage, global_position)
+		arrow.setup(global_position + Vector2(0, -10), current_target.global_position + random_offset, team, final_damage, global_position)
 	elif current_target.is_in_group("walls"):
-		# [공성 데미지 보정]
 		var struct_dmg = final_damage
-		if unit_class == UnitClass.SIEGE: struct_dmg *= 10.0 # 공성추는 10배
-		elif unit_class == UnitClass.KNIGHT: struct_dmg *= 2.0 # 기사는 2배
-		
+		if unit_class == UnitClass.SIEGE: struct_dmg *= 10.0 
+		elif unit_class == UnitClass.KNIGHT: struct_dmg *= 2.0 
 		if current_target.has_method("take_damage"):
 			current_target.take_damage(struct_dmg)
 	else:
@@ -237,10 +266,35 @@ func perform_attack():
 		else:
 			current_target.take_damage(final_damage)
 
+func perform_volley():
+	# 주변 적들 중 랜덤하게 5발 발사
+	var enemy_group = "enemies" if team == 0 else "players"
+	var enemies = get_tree().get_nodes_in_group(enemy_group)
+	if enemies.size() == 0: return
+	
+	print("!!! VOLLEY FIRE !!!")
+	attack_anim_progress = 1.0 # 사격 모션 강제 시작
+	
+	for i in range(5):
+		var rand_enemy = enemies[randi() % enemies.size()]
+		if is_instance_valid(rand_enemy):
+			var arrow = arrow_scene.instantiate()
+			get_parent().add_child(arrow)
+			var spread = Vector2(randf_range(-50, 50), randf_range(-50, 50))
+			arrow.setup(global_position + Vector2(0, -15), rand_enemy.global_position + spread, team, damage * 0.7, global_position)
+
 func take_damage_from(amount, attacker_pos):
 	var final_amount = amount
 	var dir_to_attacker = (attacker_pos - global_position).normalized()
 	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
+	
+	# [ARCHER: Defensive Side-Stance]
+	# 화살을 쏘는 중(Side-stance)라면 정면(옆면) 피격 시 데미지 70% 감소
+	if unit_class == UnitClass.ARCHER and attack_anim_progress > 0:
+		if facing_dir.dot(dir_to_attacker) > 0.0: # 정면 방향
+			final_amount *= 0.3
+			print("Archer dodged/blocked via Side-Stance!")
+	
 	if facing_dir.dot(dir_to_attacker) > 0.4: final_amount *= 1.5
 	health -= final_amount
 
@@ -254,21 +308,16 @@ func find_closest_target():
 	var closest_dist = INF
 	var closest_target = null
 	
-	# 1. 유닛 탐색
 	for member in get_tree().get_nodes_in_group(enemy_group):
 		var dist = global_position.distance_to(member.global_position)
 		if dist < closest_dist:
 			closest_dist = dist
 			closest_target = member
 			
-	# 2. breakthrough AI (적군 한정)
 	if team == 1:
-		# 가는 길이 막혀있거나 적이 성벽 너머에 있다면 성벽/성문을 타겟팅
 		if closest_target:
 			var dist_to_enemy = global_position.distance_to(closest_target.global_position)
-			# 성벽 근처(x=576)인데 적은 왼쪽에 있고 나는 오른쪽에 있다면
 			if global_position.x > 580 and closest_target.global_position.x < 570:
-				# 가장 가까운 성벽/성문 찾기
 				var closest_wall = null
 				var wall_dist = INF
 				for wall in get_tree().get_nodes_in_group("walls"):
