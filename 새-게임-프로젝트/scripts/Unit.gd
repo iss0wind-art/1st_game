@@ -16,6 +16,12 @@ var attack_range: float = 20.0
 var damage: float = 10.0
 var attack_cooldown: float = 1.0
 
+# RTS 제어 변수
+var is_selected: bool = false
+var command_pos: Vector2 = Vector2.ZERO
+var has_command: bool = false
+var command_target_unit: Node2D = null
+
 # 지형 및 스킬 변수
 var current_elevation: int = 0 
 var is_in_water: bool = false
@@ -47,7 +53,6 @@ var cached_separation: Vector2 = Vector2.ZERO
 
 func _ready():
 	ai_update_timer = randf() * ai_update_interval
-	# 타이머 초기화 (랜덤 오프셋으로 겹치지 않게)
 	volley_timer = randf() * 10.0 
 	setup_class_stats()
 	if team == 0:
@@ -72,7 +77,6 @@ func setup_class_stats():
 		UnitClass.CAVALRY:
 			speed = 220.0; attack_range = 35.0; damage = 20.0; health = 150.0; attack_cooldown = 1.2; water_speed_mult = 0.3
 		UnitClass.KNIGHT:
-			# [HERO KNIGHT BUFF] 사장님 지시: 1명이 10명을 감당하는 스펙
 			speed = 140.0; attack_range = 40.0; damage = 50.0; health = 1000.0; attack_cooldown = 0.4; water_speed_mult = 0.7
 		UnitClass.PRIEST:
 			speed = 100.0; attack_range = 150.0; damage = -10.0; health = 80.0 
@@ -83,6 +87,10 @@ func setup_class_stats():
 			speed = 50.0; attack_range = 50.0; damage = 100.0; health = 500.0; attack_cooldown = 4.0; water_speed_mult = 0.2
 
 func _draw():
+	# [RTS: 선택 효과] 선택된 아군 발밑에 녹색 원
+	if is_selected:
+		draw_arc(Vector2(0, 10), 15, 0, TAU, 32, Color.GREEN, 2.0)
+		
 	var f = 1.0 if facing_right else -1.0
 	var alpha = 0.5 if is_in_water else 1.0
 	var current_color = Color(color.r, color.g, color.b, alpha)
@@ -97,7 +105,6 @@ func _draw():
 	var leg_swing = sin(walk_timer * walk_speed) * 8.0 if velocity.length() > 5 else 0.0
 	var arm_swing = cos(walk_timer * walk_speed) * 6.0 if velocity.length() > 5 else 0.0
 	
-	# [SIEGE: 공성추 비주얼]
 	if unit_class == UnitClass.SIEGE:
 		var thrust = sin(attack_anim_progress * PI) * 15.0
 		draw_rect(Rect2(-20*f, -5, 40*f, 15), Color.DARK_SLATE_GRAY)
@@ -110,16 +117,14 @@ func _draw():
 	var right_arm_end = Vector2(8 * f, -5) - Vector2(0, arm_swing)
 	var current_target = duel_target if is_dueling else target
 	
-	# [ARCHER: Side-Stance 비주얼]
-	# 화살을 쏠 때 몸을 옆으로 틀어서 정면 면적을 줄임
 	if unit_class == UnitClass.ARCHER and attack_anim_progress > 0:
-		f *= 0.4 # 시각적으로 얇게 표시
+		f *= 0.4 
 	
 	if current_target and attack_anim_progress > 0:
 		var target_dir = (current_target.global_position - global_position).normalized()
 		if unit_class == UnitClass.ARCHER:
 			left_arm_end = target_dir * 10.0 + Vector2(0, -5)
-			right_arm_end = -target_dir * 3.0 + Vector2(0, -5) # 정면 면적 최소화
+			right_arm_end = -target_dir * 3.0 + Vector2(0, -5)
 			right_arm_end.x -= sin(attack_anim_progress * PI) * 5 * f
 		else:
 			var swing = sin(attack_anim_progress * PI) * 15.0
@@ -164,10 +169,9 @@ func _physics_process(delta):
 	attack_timer -= delta
 	ai_update_timer -= delta
 	
-	# [SKILL: ARCHER Volley]
 	if unit_class == UnitClass.ARCHER:
 		volley_timer += delta
-		if volley_timer >= 12.0: # 12초마다 일제 사격 시도
+		if volley_timer >= 12.0:
 			perform_volley()
 			volley_timer = 0.0
 
@@ -181,21 +185,37 @@ func _physics_process(delta):
 	if rage_timer > 0: current_speed *= 2.2 
 	if morale_type == 1: current_speed *= 1.5
 	elif morale_type == -1: current_speed *= 0.6
-	
-	# [지형 효과: 물속] 클래스별 패널티 적용
-	if is_in_water:
-		current_speed *= water_speed_mult
+	if is_in_water: current_speed *= water_speed_mult
 
-	if unit_class == UnitClass.CITIZEN:
-		var current_target = target
+	# [RTS: 명령 제어] 플레이어 명령이 AI보다 우선함
+	if has_command:
+		var dist_to_command = global_position.distance_to(command_pos)
+		if dist_to_command > 10.0:
+			var move_dir = (command_pos - global_position).normalized()
+			facing_right = move_dir.x > 0
+			velocity = (move_dir + cached_separation * 1.0).normalized() * current_speed
+		else:
+			has_command = false # 목표 도착
+			velocity = cached_separation * 20.0
+	elif is_instance_valid(command_target_unit):
+		# 강제 공격 명령
+		var distance = global_position.distance_to(command_target_unit.global_position)
+		if distance > attack_range:
+			var move_dir = (command_target_unit.global_position - global_position).normalized()
+			facing_right = move_dir.x > 0
+			velocity = (move_dir + cached_separation * 1.5).normalized() * current_speed
+		else:
+			velocity = cached_separation * (current_speed * 0.3)
+			if attack_timer <= 0:
+				target = command_target_unit # 공격 함수가 target을 참조하므로 일시 할당
+				perform_attack()
+				attack_timer = attack_cooldown
+				attack_anim_progress = 1.0
+	elif unit_class == UnitClass.CITIZEN:
 		var move_direction = (retreat_pos - global_position).normalized()
-		
-		# [TACTICS: 전략적 가변성] 사기가 높으면 무작정 뒤로 숨지 않고 전사들 곁에서 응원/지원 시늉 (미끼 역할도 가눙)
-		if morale_type == 1 and is_instance_valid(current_target):
-			# 도망가는 대신 아군 전사와 후방의 중간 지점을 유지
-			var support_pos = (retreat_pos + current_target.global_position) * 0.5
+		if morale_type == 1 and is_instance_valid(target):
+			var support_pos = (retreat_pos + target.global_position) * 0.5
 			move_direction = (support_pos - global_position).normalized()
-			
 		velocity = (move_direction + cached_separation * 1.0).normalized() * current_speed * 0.8
 	elif current_target:
 		var distance = global_position.distance_to(current_target.global_position)
@@ -209,12 +229,10 @@ func _physics_process(delta):
 		if distance > actual_attack_range:
 			velocity = (move_direction + cached_separation * 1.5).normalized() * current_speed
 		else:
-			# 기사는 스태미너가 좋아 난전 중에도 계속 전진하거나 타이트하게 붙음
 			if unit_class == UnitClass.KNIGHT:
 				velocity = (move_direction * 0.5 + cached_separation * 0.5).normalized() * current_speed * 0.4
 			else:
 				velocity = cached_separation * (current_speed * 0.3)
-				
 			facing_right = (current_target.global_position.x - global_position.x) > 0
 			if attack_timer <= 0:
 				perform_attack()
@@ -227,6 +245,17 @@ func _physics_process(delta):
 	if velocity.length() > 0:
 		move_and_slide()
 	queue_redraw()
+
+func give_move_command(pos: Vector2):
+	command_pos = pos
+	has_command = true
+	command_target_unit = null
+	is_dueling = false # 조종 시 일기토 해제 (유연성)
+
+func give_attack_command(unit: Node2D):
+	command_target_unit = unit
+	has_command = false
+	is_dueling = false
 
 func handle_death():
 	if is_dueling:
@@ -246,48 +275,41 @@ func apply_morale(type: int, duration: float):
 	morale_timer = duration
 
 func perform_attack():
-	var current_target = duel_target if is_dueling else target
-	if not current_target or not is_instance_valid(current_target): return
+	var current_atk_target = duel_target if is_dueling else (command_target_unit if is_instance_valid(command_target_unit) else target)
+	if not current_atk_target or not is_instance_valid(current_atk_target): return
 	
 	var final_damage = damage
 	if rage_timer > 0: final_damage *= 1.5
 	if current_elevation > 0: final_damage *= 1.2
 	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
-		# [PROJECTILE INACCURACY] 사거리(Range)에 반비례하는 정확도
-		var distance = global_position.distance_to(current_target.global_position)
+		var distance = global_position.distance_to(current_atk_target.global_position)
 		var actual_range = attack_range
 		if current_elevation > 0: actual_range *= 1.4
-		
-		# 거리가 멀수록 화살이 빗나갈 확률이 기하급수적으로 증가 (0~80픽셀 오차)
 		var dist_ratio = clamp(distance / actual_range, 0.0, 1.0)
 		var spread_range = dist_ratio * dist_ratio * 80.0
 		var random_offset = Vector2(randf_range(-spread_range, spread_range), randf_range(-spread_range, spread_range))
 		
 		var arrow = arrow_scene.instantiate()
 		get_parent().add_child(arrow)
-		arrow.setup(global_position + Vector2(0, -10), current_target.global_position + random_offset, team, final_damage, global_position)
-	elif current_target.is_in_group("walls"):
+		arrow.setup(global_position + Vector2(0, -10), current_atk_target.global_position + random_offset, team, final_damage, global_position)
+	elif current_atk_target.is_in_group("walls"):
 		var struct_dmg = final_damage
 		if unit_class == UnitClass.SIEGE: struct_dmg *= 10.0 
 		elif unit_class == UnitClass.KNIGHT: struct_dmg *= 2.0 
-		if current_target.has_method("take_damage"):
-			current_target.take_damage(struct_dmg)
+		if current_atk_target.has_method("take_damage"):
+			current_atk_target.take_damage(struct_dmg)
 	else:
-		if current_target.has_method("take_damage_from"):
-			current_target.take_damage_from(final_damage, global_position)
+		if current_atk_target.has_method("take_damage_from"):
+			current_atk_target.take_damage_from(final_damage, global_position)
 		else:
-			current_target.take_damage(final_damage)
+			current_atk_target.take_damage(final_damage)
 
 func perform_volley():
-	# 주변 적들 중 랜덤하게 5발 발사
 	var enemy_group = "enemies" if team == 0 else "players"
 	var enemies = get_tree().get_nodes_in_group(enemy_group)
 	if enemies.size() == 0: return
-	
-	print("!!! VOLLEY FIRE !!!")
-	attack_anim_progress = 1.0 # 사격 모션 강제 시작
-	
+	attack_anim_progress = 1.0 
 	for i in range(5):
 		var rand_enemy = enemies[randi() % enemies.size()]
 		if is_instance_valid(rand_enemy):
@@ -300,14 +322,8 @@ func take_damage_from(amount, attacker_pos):
 	var final_amount = amount
 	var dir_to_attacker = (attacker_pos - global_position).normalized()
 	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
-	
-	# [ARCHER: Defensive Side-Stance]
-	# 화살을 쏘는 중(Side-stance)라면 정면(옆면) 피격 시 데미지 70% 감소
 	if unit_class == UnitClass.ARCHER and attack_anim_progress > 0:
-		if facing_dir.dot(dir_to_attacker) > 0.0: # 정면 방향
-			final_amount *= 0.3
-			print("Archer dodged/blocked via Side-Stance!")
-	
+		if facing_dir.dot(dir_to_attacker) > 0.0: final_amount *= 0.3
 	if facing_dir.dot(dir_to_attacker) > 0.4: final_amount *= 1.5
 	health -= final_amount
 
@@ -329,7 +345,6 @@ func find_closest_target():
 			
 	if team == 1:
 		if closest_target:
-			var dist_to_enemy = global_position.distance_to(closest_target.global_position)
 			if global_position.x > 580 and closest_target.global_position.x < 570:
 				var closest_wall = null
 				var wall_dist = INF
@@ -340,7 +355,6 @@ func find_closest_target():
 						closest_wall = wall
 				if closest_wall:
 					closest_target = closest_wall
-	
 	target = closest_target
 
 func get_separation_vector() -> Vector2:
