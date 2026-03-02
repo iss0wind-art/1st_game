@@ -4,6 +4,8 @@
 [ext_resource type="PackedScene" uid="uid://b8y4v8x2x7j1n" path="res://scenes/Unit.tscn" id="2_unit_scene"]
 [ext_resource type="PackedScene" path="res://scenes/SiegeWall.tscn" id="3_siege_wall_scene"]
 
+[ext_resource type="PackedScene" uid="uid://c3y4v8x2x7j1r" path="res://scenes/Arrow.tscn" id="4_arrow_scene"]
+
 [node name="Main" type="Node2D" unique_id=1805508859]
 
 [node name="ColorRect" type="ColorRect" parent="." unique_id=147618517]
@@ -17,6 +19,7 @@ color = Color(0.12549, 0.12549, 0.12549, 1)
 script = ExtResource("1_spawner_script")
 unit_scene = ExtResource("2_unit_scene")
 siege_wall_scene = ExtResource("3_siege_wall_scene")
+arrow_scene = ExtResource("4_arrow_scene")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1762443572]
 anchor_mode = 0
