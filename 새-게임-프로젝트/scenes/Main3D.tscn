@@ -1,0 +1,67 @@
+[gd_scene format=3 uid="uid://vc48gjgql0sw"]
+
+[ext_resource type="Script" uid="uid://cab4ftkcfrgh3" path="res://scripts/Spawner3D.gd" id="1"]
+[ext_resource type="Script" uid="uid://diw7upbswc7eh" path="res://scripts/InputManager3D.gd" id="2"]
+
+[sub_resource type="ProceduralSkyMaterial" id="7"]
+sky_top_color = Color(0.384314, 0.454902, 0.54902, 1)
+
+[sub_resource type="Sky" id="8"]
+sky_material = SubResource("7")
+
+[sub_resource type="Environment" id="9"]
+background_mode = 2
+sky = SubResource("8")
+tonemap_mode = 2
+glow_enabled = true
+
+[sub_resource type="PlaneMesh" id="10"]
+size = Vector2(200, 200)
+
+[sub_resource type="StandardMaterial3D" id="11"]
+albedo_color = Color(0.2, 0.25, 0.2, 1)
+
+[sub_resource type="WorldBoundaryShape3D" id="12"]
+
+[node name="Main3D" type="Node3D" unique_id=1191269084]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=627910345]
+environment = SubResource("9")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1340617883]
+transform = Transform3D(-0.866025, -0.433013, 0.25, 0, 0.5, 0.866025, -0.5, 0.75, -0.433013, 0, 10, 0)
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="." unique_id=1948726815]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground" unique_id=1309485235]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.01190567, -0.17438507, 0.14792633)
+mesh = SubResource("10")
+surface_material_override/0 = SubResource("11")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground" unique_id=856704744]
+shape = SubResource("12")
+
+[node name="Spawner" type="Node3D" parent="." unique_id=296685716]
+script = ExtResource("1")
+
+[node name="InputManager" type="Node3D" parent="." unique_id=1460603911]
+script = ExtResource("2")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=2031859423]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 25, 30)
+far = 500.0
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1060210664]
+
+[node name="SelectionRect" type="Control" parent="CanvasLayer" unique_id=521996701]
+layout_mode = 3
+anchors_preset = 0
+mouse_filter = 2
+
+[node name="Label" type="Label" parent="CanvasLayer" unique_id=350895196]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 300.0
+offset_bottom = 46.0
+text = "3D TEST DIMENSION (50 vs 50)"
