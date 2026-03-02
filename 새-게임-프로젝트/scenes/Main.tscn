@@ -18,9 +18,8 @@ offset_right = 1156.0
 offset_bottom = 649.0
 color = Color(0.12549, 0.12549, 0.12549, 1)
 
-[node name="River" parent="." instance=ExtResource("7_river_scene")]
+[node name="River" parent="." groups=["rivers"] instance=ExtResource("7_river_scene")]
 position = Vector2(576, 324)
-groups = ["rivers"]
 
 [node name="Hill_North" parent="." instance=ExtResource("6_hill_scene")]
 position = Vector2(400, 150)

@@ -14,9 +14,9 @@ shape = SubResource("RectangleShape2D_1")
 
 [node name="Visual" type="ColorRect" parent="." unique_id=1927612883]
 offset_left = -100.0
-offset_top = -100.0
+offset_top = -96.0
 offset_right = 100.0
-offset_bottom = 100.0
+offset_bottom = 104.0
 mouse_filter = 2
 color = Color(0.4, 0.3, 0.2, 0.3)
 metadata/_edit_use_anchors_ = true
