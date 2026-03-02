@@ -6,8 +6,8 @@ enum CitizenType { MALE, FEMALE, CHILD, OLD }
 @export var unit_class: UnitClass = UnitClass.SWORDMAN
 @export var citizen_type: CitizenType = CitizenType.MALE
 @export var team: int = 0 
-
-# 기본 속성
+var safe_zone: Vector2 = Vector2.ZERO
+var retreat_pos: Vector2 = Vector2.ZERO
 var speed: float = 100.0
 var health: float = 100.0
 var attack_range: float = 20.0
@@ -42,6 +42,12 @@ var cached_separation: Vector2 = Vector2.ZERO
 func _ready():
 	ai_update_timer = randf() * ai_update_interval
 	setup_class_stats()
+	
+	# 안전구역(본진) 뒤쪽으로 후퇴 지점 설정
+	if team == 0:
+		retreat_pos = safe_zone + Vector2(-150, (randf()-0.5) * 200.0)
+	else:
+		retreat_pos = safe_zone + Vector2(150, (randf()-0.5) * 200.0)
 	
 	if team == 0:
 		color = Color.CORNFLOWER_BLUE
@@ -138,7 +144,7 @@ func _physics_process(delta):
 		handle_death()
 		return
 
-	# 각종 타이머 처리
+	# 애니메이션 및 타이머 갱신
 	if velocity.length() > 5: walk_timer += delta
 	else: walk_timer = 0
 	
@@ -155,45 +161,62 @@ func _physics_process(delta):
 	attack_timer -= delta
 	ai_update_timer -= delta
 	
+	# AI 로직 업데이트 (일정 주기마다)
 	if ai_update_timer <= 0:
 		ai_update_timer = ai_update_interval
 		if not is_dueling:
 			find_closest_target()
 		cached_separation = get_separation_vector()
 	
-	# 일기토 중인 경우 타겟 고정
+	# 일기토 상태 관리
 	if is_dueling and (not is_instance_valid(duel_target) or duel_target.health <= 0):
 		is_dueling = false
 		duel_target = null
 	
+	# 이동 및 행동 결정
 	var current_target = duel_target if is_dueling else target
+	var move_direction = Vector2.ZERO
+	var current_speed = speed
 	
-	if current_target:
+	# 버프 적용된 스피드
+	if rage_timer > 0: current_speed *= 1.5
+	if morale_type == 1: current_speed *= 1.2
+	elif morale_type == -1: current_speed *= 0.7
+	if is_dueling: current_speed *= 1.3
+
+	if unit_class == UnitClass.CITIZEN:
+		# [본능적 보호 AI] 시민: 타겟 공격 대신 본진 뒤쪽(retreat_pos)으로 피신
+		var dist_to_retreat = global_position.distance_to(retreat_pos)
+		if dist_to_retreat > 30.0:
+			move_direction = (retreat_pos - global_position).normalized()
+			velocity = (move_direction + cached_separation * 1.0).normalized() * current_speed * 0.8
+		else:
+			velocity = cached_separation * 20.0 # 살짝씩 거리 유지하며 대기
+	elif current_target:
+		# [교전 AI] 전투병: 타겟을 찾아 기동
 		var distance = global_position.distance_to(current_target.global_position)
-		var direction = (current_target.global_position - global_position).normalized()
+		move_direction = (current_target.global_position - global_position).normalized()
 		
-		# 버프 적용된 최종 스피드
-		var final_speed = speed
-		if rage_timer > 0: final_speed *= 1.5
-		if morale_type == 1: final_speed *= 1.2
-		elif morale_type == -1: final_speed *= 0.7
-		if is_dueling: final_speed *= 1.3 # 일기토 시 돌진
-		
-		# 분리 로직 적용 (일기토 중엔 살짝 약화)
-		var sep_strength = 0.5 if is_dueling else 1.5
-		direction = (direction + cached_separation * sep_strength).normalized()
+		# 분리 로직 (대형 유지)
+		var sep_strength = 0.3 if is_dueling else 1.5
+		move_direction = (move_direction + cached_separation * sep_strength).normalized()
 		
 		if distance > attack_range:
-			velocity = direction * final_speed
-			move_and_slide()
+			velocity = move_direction * current_speed
 		else:
-			velocity = cached_separation * (final_speed * 0.5)
-			move_and_slide()
+			velocity = cached_separation * (current_speed * 0.3)
 			if attack_timer <= 0 and attack_range > 0:
+				# 일기토 중엔 더 빈번한 공격
 				perform_attack()
 				attack_timer = attack_cooldown
-				if rage_timer > 0 or morale_type == 1: attack_timer *= 0.7
+				if is_dueling or rage_timer > 0 or morale_type == 1: attack_timer *= 0.65
 				attack_anim_progress = 1.0
+	else:
+		# 주변에 적이 없고 할 일이 없으면 중앙(성문 방향)으로 전진하거나 대기
+		velocity = cached_separation * 20.0
+
+	if velocity.length() > 0:
+		move_and_slide()
 	
 	queue_redraw()
 

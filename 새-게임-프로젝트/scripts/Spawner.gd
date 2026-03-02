@@ -20,16 +20,16 @@ func spawn_siege_walls():
 	var spacing = screen_height / wall_count
 	
 	for i in range(wall_count):
+		if i == 3: continue # 중앙 성문(Gate)은 열어서 통로 확보
 		var wall = siege_wall_scene.instantiate()
 		wall.global_position = Vector2(576, i * spacing + spacing/2)
-		if i == 3:
-			wall.is_gate = true
 		add_child(wall)
 
 func spawn_units(team: int, center: Vector2, group_name: String):
 	for i in range(unit_count_per_team):
 		var unit = unit_scene.instantiate()
 		unit.team = team
+		unit.safe_zone = center # 본능적으로 돌아갈 안전구역 설정
 		unit.add_to_group(group_name)
 		
 		# 유닛 비율 설정
