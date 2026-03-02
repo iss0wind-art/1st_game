@@ -135,6 +135,14 @@ func find_closest_target():
 				closest_dist = dist
 				closest_target = member
 	
+	# 적군(Team 1)의 경우, 플레이어 유닛이 없으면 성벽을 타겟으로 잡음
+	if team == 1 and closest_target == null:
+		for wall in get_tree().get_nodes_in_group("walls"):
+			var dist = global_position.distance_to(wall.global_position)
+			if dist < closest_dist:
+				closest_dist = dist
+				closest_target = wall
+	
 	target = closest_target
 
 func take_damage(amount):

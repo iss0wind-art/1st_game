@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://c6r8v3x2x7j1p"]
+[gd_scene load_steps=4 format=3 uid="uid://c6r8v3x2x7j1p"]
 
 [ext_resource type="Script" path="res://scripts/Spawner.gd" id="1_spawner_script"]
 [ext_resource type="PackedScene" uid="uid://b8y4v8x2x7j1n" path="res://scenes/Unit.tscn" id="2_unit_scene"]
+[ext_resource type="PackedScene" uid="uid://d3y4v8x2x7j1q" path="res://scenes/SiegeWall.tscn" id="3_siege_wall_scene"]
 
 [node name="Main" type="Node2D"]
 
@@ -13,10 +14,11 @@ color = Color(0.12549, 0.12549, 0.12549, 1)
 [node name="Spawner" type="Node2D" parent="."]
 script = ExtResource("1_spawner_script")
 unit_scene = ExtResource("2_unit_scene")
-player_spawn_center = Vector2(300, 324)
-enemy_spawn_center = Vector2(852, 324)
-spawn_radius = 200.0
-unit_count_per_team = 100
+siege_wall_scene = ExtResource("3_siege_wall_scene")
+player_spawn_center = Vector2(250, 324)
+enemy_spawn_center = Vector2(900, 324)
+spawn_radius = 300.0
+unit_count_per_team = 600
 
 [node name="Camera2D" type="Camera2D" parent="."]
 anchor_mode = 0
