@@ -16,6 +16,10 @@ var attack_range: float = 20.0
 var damage: float = 10.0
 var attack_cooldown: float = 1.0
 
+# 지형 변수
+var current_elevation: int = 0 # 0: 평지, 1: 언덕
+var is_in_water: bool = false
+
 # 상태 및 타이머
 var target: Node2D = null
 var color: Color = Color.WHITE
@@ -78,16 +82,27 @@ func setup_class_stats():
 
 func _draw():
 	var f = 1.0 if facing_right else -1.0
+	
+	# 지형 시각 효과 (물속에서는 흐릿하게)
+	var alpha = 0.5 if is_in_water else 1.0
+	var current_color = Color(color.r, color.g, color.b, alpha)
+	
+	# 언덕 표시 (머리 위 삼각형)
+	if current_elevation > 0:
+		draw_colored_polygon([Vector2(-3, -25), Vector2(3, -25), Vector2(0, -30)], Color.YELLOW)
+
 	if rage_timer > 0: draw_circle(Vector2.ZERO, 20, Color(1, 0, 0, 0.2))
 	if morale_type == 1: draw_circle(Vector2.ZERO, 20, Color(1, 0.8, 0, 0.3))
 	elif morale_type == -1: draw_circle(Vector2.ZERO, 20, Color(0.5, 0.5, 0.5, 0.3))
 	if is_dueling: draw_arc(Vector2(0, -25), 5, 0, TAU, 32, Color.GOLD, 1.0)
+	
 	var leg_swing = sin(walk_timer * walk_speed) * 8.0 if velocity.length() > 5 else 0.0
 	var arm_swing = cos(walk_timer * walk_speed) * 6.0 if velocity.length() > 5 else 0.0
 	var arm_origin = Vector2(0, -8)
 	var left_arm_end = Vector2(-8 * f, -5) + Vector2(0, arm_swing)
 	var right_arm_end = Vector2(8 * f, -5) - Vector2(0, arm_swing)
 	var current_target = duel_target if is_dueling else target
+	
 	if current_target and attack_anim_progress > 0:
 		var target_dir = (current_target.global_position - global_position).normalized()
 		if unit_class == UnitClass.ARCHER:
@@ -97,31 +112,33 @@ func _draw():
 		else:
 			var swing = sin(attack_anim_progress * PI) * 15.0
 			right_arm_end = target_dir * (12.0 + swing) + Vector2(0, -5)
-	draw_line(Vector2(0, -10), Vector2(0, 5), color, 2.5)
-	draw_circle(Vector2(0, -15), 5, color)
-	draw_line(arm_origin, left_arm_end, color, 2.0)
-	draw_line(arm_origin, right_arm_end, color, 2.0)
-	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((-6 + leg_swing) * f, 10), color, 2.0)
-	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((6 - leg_swing) * f, 10), color, 2.0)
+			
+	draw_line(Vector2(0, -10), Vector2(0, 5), current_color, 2.5)
+	draw_circle(Vector2(0, -15), 5, current_color)
+	draw_line(arm_origin, left_arm_end, current_color, 2.0)
+	draw_line(arm_origin, right_arm_end, current_color, 2.0)
+	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((-6 + leg_swing) * f, 10), current_color, 2.0)
+	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((6 - leg_swing) * f, 10), current_color, 2.0)
+	
 	match unit_class:
 		UnitClass.ARCHER:
 			var bow_center = left_arm_end
 			var bow_pull = sin(attack_anim_progress * PI) * 4
 			var target_angle = (left_arm_end - arm_origin).angle()
 			draw_set_transform(bow_center, target_angle, Vector2.ONE)
-			draw_arc(Vector2.ZERO, 10, -PI/2, PI/2, 8, color, 1.5)
-			draw_line(Vector2(0, -10), Vector2(-bow_pull, 0), color, 0.5)
-			draw_line(Vector2(-bow_pull, 0), Vector2(0, 10), color, 0.5)
+			draw_arc(Vector2.ZERO, 10, -PI/2, PI/2, 8, current_color, 1.5)
+			draw_line(Vector2(0, -10), Vector2(-bow_pull, 0), current_color, 0.5)
+			draw_line(Vector2(-bow_pull, 0), Vector2(0, 10), current_color, 0.5)
 			draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
 		UnitClass.SWORDMAN, UnitClass.KNIGHT:
 			var sword_len = 12 if unit_class == UnitClass.SWORDMAN else 18
 			var sword_dir = (right_arm_end - arm_origin).normalized()
-			draw_line(right_arm_end, right_arm_end + sword_dir * sword_len, color, 2.0)
+			draw_line(right_arm_end, right_arm_end + sword_dir * sword_len, current_color, 2.0)
 		UnitClass.CAVALRY:
-			draw_line(Vector2(-15 * f, 10), Vector2(15 * f, 10), color, 3.0)
+			draw_line(Vector2(-15 * f, 10), Vector2(15 * f, 10), current_color, 3.0)
 		UnitClass.CITIZEN:
 			if citizen_type == CitizenType.FEMALE:
-				draw_line(Vector2(-8, 5), Vector2(8, 5), color, 1.5)
+				draw_line(Vector2(-8, 5), Vector2(8, 5), current_color, 1.5)
 
 func _physics_process(delta):
 	if health <= 0:
@@ -146,13 +163,20 @@ func _physics_process(delta):
 	if is_dueling and (not is_instance_valid(duel_target) or duel_target.health <= 0):
 		is_dueling = false
 		duel_target = null
+		
 	var current_target = duel_target if is_dueling else target
 	var current_speed = speed
-	# [스팀팩 효과] 버프 시 이동 속도 비약적 상승
+	
+	# [스팀팩 효과]
 	if rage_timer > 0: current_speed *= 2.2 
 	if morale_type == 1: current_speed *= 1.5
 	elif morale_type == -1: current_speed *= 0.6
 	if is_dueling: current_speed *= 1.3
+	
+	# [지형 효과: 물속] 이동 속도 50% 감소
+	if is_in_water:
+		current_speed *= 0.5
+
 	if unit_class == UnitClass.CITIZEN:
 		var dist_to_retreat = global_position.distance_to(retreat_pos)
 		if dist_to_retreat > 30.0:
@@ -162,11 +186,18 @@ func _physics_process(delta):
 			velocity = cached_separation * 20.0
 	elif current_target:
 		var distance = global_position.distance_to(current_target.global_position)
+		var actual_attack_range = attack_range
+		
+		# [지형 효과: 언덕] 궁병 사거리 증가
+		if current_elevation > 0 and unit_class == UnitClass.ARCHER:
+			actual_attack_range *= 1.4
+
 		var move_direction = (current_target.global_position - global_position).normalized()
 		facing_right = move_direction.x > 0
 		var sep_strength = 0.3 if is_dueling else 1.5
 		move_direction = (move_direction + cached_separation * sep_strength).normalized()
-		if distance > attack_range:
+		
+		if distance > actual_attack_range:
 			velocity = move_direction * current_speed
 		else:
 			velocity = cached_separation * (current_speed * 0.3)
@@ -225,15 +256,22 @@ func grow_up():
 func perform_attack():
 	var current_target = duel_target if is_dueling else target
 	if not current_target or not is_instance_valid(current_target): return
+	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
 		var arrow = arrow_scene.instantiate()
 		get_parent().add_child(arrow)
 		var shoot_dmg = damage
+		# [지형 효과: 언덕] 공격력 보너스
+		if current_elevation > 0: shoot_dmg *= 1.3
+		
 		if rage_timer > 0: shoot_dmg *= 1.5
 		if morale_type == 1: shoot_dmg *= 1.3
 		arrow.setup(global_position + Vector2(0, -10), current_target.global_position, team, shoot_dmg, global_position)
 	else:
 		var final_damage = damage
+		# [지형 효과: 언덕] 근접 공격력 보너스 (내리막길 힘)
+		if current_elevation > 0: final_damage *= 1.2
+		
 		if rage_timer > 0: final_damage *= 1.5
 		if morale_type == 1: final_damage *= 1.3
 		elif morale_type == -1: final_damage *= 0.8
@@ -244,10 +282,9 @@ func perform_attack():
 
 func take_damage_from(amount, attacker_pos):
 	var final_amount = amount
-	# [백스탭 판정] 뒤에서 맞으면 피해량 1.5배
 	var dir_to_attacker = (attacker_pos - global_position).normalized()
 	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
-	if facing_dir.dot(dir_to_attacker) > 0.4: # 뒤에서 공격받음
+	if facing_dir.dot(dir_to_attacker) > 0.4: 
 		final_amount *= 1.5
 	health -= final_amount
 
