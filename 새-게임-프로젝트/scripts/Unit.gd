@@ -6,7 +6,7 @@ enum CitizenType { MALE, FEMALE, CHILD, OLD }
 @export var unit_class: UnitClass = UnitClass.SWORDMAN
 @export var citizen_type: CitizenType = CitizenType.MALE
 @export var team: int = 0 
-@export var arrow_scene: PackedScene # Spawner에서 전달받음
+@export var arrow_scene: PackedScene 
 
 var safe_zone: Vector2 = Vector2.ZERO
 var retreat_pos: Vector2 = Vector2.ZERO
@@ -45,7 +45,6 @@ var cached_separation: Vector2 = Vector2.ZERO
 func _ready():
 	ai_update_timer = randf() * ai_update_interval
 	setup_class_stats()
-	
 	if team == 0:
 		retreat_pos = safe_zone + Vector2(-150, (randf()-0.5) * 200.0)
 		color = Color.CORNFLOWER_BLUE
@@ -54,7 +53,6 @@ func _ready():
 		retreat_pos = safe_zone + Vector2(150, (randf()-0.5) * 200.0)
 		color = Color.INDIAN_RED
 		facing_right = false
-	
 	if unit_class == UnitClass.CITIZEN and citizen_type == CitizenType.CHILD:
 		scale = Vector2(0.6, 0.6)
 
@@ -79,58 +77,32 @@ func setup_class_stats():
 			speed = 40.0; attack_range = 350.0; damage = 50.0; health = 300.0; attack_cooldown = 3.5
 
 func _draw():
-	# 캐릭터 반전 처리
 	var f = 1.0 if facing_right else -1.0
-	
-	# 상태 아우라
 	if rage_timer > 0: draw_circle(Vector2.ZERO, 20, Color(1, 0, 0, 0.2))
 	if morale_type == 1: draw_circle(Vector2.ZERO, 20, Color(1, 0.8, 0, 0.3))
 	elif morale_type == -1: draw_circle(Vector2.ZERO, 20, Color(0.5, 0.5, 0.5, 0.3))
 	if is_dueling: draw_arc(Vector2(0, -25), 5, 0, TAU, 32, Color.GOLD, 1.0)
-
-	# 애니메이션
 	var leg_swing = sin(walk_timer * walk_speed) * 8.0 if velocity.length() > 5 else 0.0
 	var arm_swing = cos(walk_timer * walk_speed) * 6.0 if velocity.length() > 5 else 0.0
-	
-	var head_pos = Vector2(0, -15)
-	var body_top = Vector2(0, -10)
-	var body_bottom = Vector2(0, 5)
-	
-	# 몸통
-	draw_line(body_top, body_bottom, color, 2.5)
-	draw_circle(head_pos, 5, color)
-	
-	# 팔 (전투 시 타겟 방향으로 조준 가능)
 	var arm_origin = Vector2(0, -8)
 	var left_arm_end = Vector2(-8 * f, -5) + Vector2(0, arm_swing)
 	var right_arm_end = Vector2(8 * f, -5) - Vector2(0, arm_swing)
-	
-	# 교전 시 팔 각도 조정
 	var current_target = duel_target if is_dueling else target
 	if current_target and attack_anim_progress > 0:
 		var target_dir = (current_target.global_position - global_position).normalized()
-		var target_angle = target_dir.angle()
-		
 		if unit_class == UnitClass.ARCHER:
-			# 활 조준
-			left_arm_end = Vector2(12 * f, -5).rotated(target_angle if not facing_right else target_angle)
-			# (실제로는 facing에 따라 로직이 복잡해지므로 간단히 처리)
 			left_arm_end = target_dir * 10.0 + Vector2(0, -5)
 			right_arm_end = -target_dir * 5.0 + Vector2(0, -5)
 			right_arm_end.x -= sin(attack_anim_progress * PI) * 5 * f
 		else:
-			# 휘두르기
 			var swing = sin(attack_anim_progress * PI) * 15.0
 			right_arm_end = target_dir * (12.0 + swing) + Vector2(0, -5)
-	
+	draw_line(Vector2(0, -10), Vector2(0, 5), color, 2.5)
+	draw_circle(Vector2(0, -15), 5, color)
 	draw_line(arm_origin, left_arm_end, color, 2.0)
 	draw_line(arm_origin, right_arm_end, color, 2.0)
-	
-	# 다리
-	draw_line(body_bottom, body_bottom + Vector2((-6 + leg_swing) * f, 10), color, 2.0)
-	draw_line(body_bottom, body_bottom + Vector2((6 - leg_swing) * f, 10), color, 2.0)
-	
-	# 무기
+	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((-6 + leg_swing) * f, 10), color, 2.0)
+	draw_line(Vector2(0, 5), Vector2(0, 5) + Vector2((6 - leg_swing) * f, 10), color, 2.0)
 	match unit_class:
 		UnitClass.ARCHER:
 			var bow_center = left_arm_end
@@ -145,8 +117,6 @@ func _draw():
 			var sword_len = 12 if unit_class == UnitClass.SWORDMAN else 18
 			var sword_dir = (right_arm_end - arm_origin).normalized()
 			draw_line(right_arm_end, right_arm_end + sword_dir * sword_len, color, 2.0)
-		UnitClass.KNIGHT:
-			draw_rect(Rect2(-10, -20, 20, 25), color, false, 1.5)
 		UnitClass.CAVALRY:
 			draw_line(Vector2(-15 * f, 10), Vector2(15 * f, 10), color, 3.0)
 		UnitClass.CITIZEN:
@@ -157,39 +127,32 @@ func _physics_process(delta):
 	if health <= 0:
 		handle_death()
 		return
-
 	if velocity.length() > 5: walk_timer += delta
 	else: walk_timer = 0
-	
 	if attack_anim_progress > 0: attack_anim_progress -= delta * 2.5
 	if rage_timer > 0: rage_timer -= delta
 	if morale_timer > 0: 
 		morale_timer -= delta
 		if morale_timer <= 0: morale_type = 0
-	
 	if unit_class == UnitClass.CITIZEN and citizen_type == CitizenType.CHILD:
 		aging_timer -= delta
 		if aging_timer <= 0: grow_up()
-
 	attack_timer -= delta
 	ai_update_timer -= delta
-	
 	if ai_update_timer <= 0:
 		ai_update_timer = ai_update_interval
 		if not is_dueling: find_closest_target()
 		cached_separation = get_separation_vector()
-	
 	if is_dueling and (not is_instance_valid(duel_target) or duel_target.health <= 0):
 		is_dueling = false
 		duel_target = null
-	
 	var current_target = duel_target if is_dueling else target
 	var current_speed = speed
-	if rage_timer > 0: current_speed *= 1.5
-	if morale_type == 1: current_speed *= 1.2
-	elif morale_type == -1: current_speed *= 0.7
+	# [스팀팩 효과] 버프 시 이동 속도 비약적 상승
+	if rage_timer > 0: current_speed *= 2.2 
+	if morale_type == 1: current_speed *= 1.5
+	elif morale_type == -1: current_speed *= 0.6
 	if is_dueling: current_speed *= 1.3
-
 	if unit_class == UnitClass.CITIZEN:
 		var dist_to_retreat = global_position.distance_to(retreat_pos)
 		if dist_to_retreat > 30.0:
@@ -200,31 +163,23 @@ func _physics_process(delta):
 	elif current_target:
 		var distance = global_position.distance_to(current_target.global_position)
 		var move_direction = (current_target.global_position - global_position).normalized()
-		
-		# 시선 처리
 		facing_right = move_direction.x > 0
-		
 		var sep_strength = 0.3 if is_dueling else 1.5
 		move_direction = (move_direction + cached_separation * sep_strength).normalized()
-		
 		if distance > attack_range:
 			velocity = move_direction * current_speed
 		else:
 			velocity = cached_separation * (current_speed * 0.3)
-			# 공격 시 적 방향 바라보기
 			facing_right = (current_target.global_position.x - global_position.x) > 0
-			
 			if attack_timer <= 0:
 				perform_attack()
 				attack_timer = attack_cooldown
-				if is_dueling or rage_timer > 0 or morale_type == 1: attack_timer *= 0.65
+				if is_dueling or rage_timer > 0 or morale_type == 1: attack_timer *= 0.6
 				attack_anim_progress = 1.0
 	else:
 		velocity = cached_separation * 20.0
-
 	if velocity.length() > 0:
 		move_and_slide()
-	
 	queue_redraw()
 
 func handle_death():
@@ -270,23 +225,34 @@ func grow_up():
 func perform_attack():
 	var current_target = duel_target if is_dueling else target
 	if not current_target or not is_instance_valid(current_target): return
-	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
-		# 화살 발사
 		var arrow = arrow_scene.instantiate()
 		get_parent().add_child(arrow)
 		var shoot_dmg = damage
 		if rage_timer > 0: shoot_dmg *= 1.5
 		if morale_type == 1: shoot_dmg *= 1.3
-		arrow.setup(global_position + Vector2(0, -10), current_target.global_position, team, shoot_dmg)
+		arrow.setup(global_position + Vector2(0, -10), current_target.global_position, team, shoot_dmg, global_position)
 	else:
-		# 근접 공격
 		var final_damage = damage
 		if rage_timer > 0: final_damage *= 1.5
 		if morale_type == 1: final_damage *= 1.3
 		elif morale_type == -1: final_damage *= 0.8
-		if current_target.has_method("take_damage"):
+		if current_target.has_method("take_damage_from"):
+			current_target.take_damage_from(final_damage, global_position)
+		else:
 			current_target.take_damage(final_damage)
+
+func take_damage_from(amount, attacker_pos):
+	var final_amount = amount
+	# [백스탭 판정] 뒤에서 맞으면 피해량 1.5배
+	var dir_to_attacker = (attacker_pos - global_position).normalized()
+	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
+	if facing_dir.dot(dir_to_attacker) > 0.4: # 뒤에서 공격받음
+		final_amount *= 1.5
+	health -= final_amount
+
+func take_damage(amount):
+	health -= amount
 
 func find_closest_target():
 	if unit_class == UnitClass.CITIZEN: 
@@ -325,9 +291,6 @@ func start_duel(enemy):
 func accept_duel(enemy):
 	is_dueling = true
 	duel_target = enemy
-
-func take_damage(amount):
-	health -= amount
 
 func get_separation_vector() -> Vector2:
 	var separation_vector = Vector2.ZERO

@@ -16,21 +16,27 @@ func _draw():
 	draw_line(Vector2(5, 0), Vector2(2, -2), Color.WHITE, 1.0)
 	draw_line(Vector2(5, 0), Vector2(2, 2), Color.WHITE, 1.0)
 
+var attacker_pos: Vector2 = Vector2.ZERO
+
 func _physics_process(delta):
 	position += direction * speed * delta
 	rotation = direction.angle()
 
 func _on_body_entered(body):
-	if body.has_method("take_damage"):
-		# 같은 팀은 맞추지 않음 (Spawner에서 target_team 설정 필요)
-		if body.has_member("team") and body.team != target_team:
-			return # 아군은 무시
+	if body.has_method("take_damage_from") or body.has_method("take_damage"):
+		if body.get("team") != null and body.team != target_team:
+			return 
 		
-		body.take_damage(damage)
-		queue_free() # 충돌 시 소멸
+		if body.has_method("take_damage_from"):
+			body.take_damage_from(damage, attacker_pos)
+		else:
+			body.take_damage(damage)
+			
+		queue_free()
 
-func setup(start_pos: Vector2, target_pos: Vector2, team_id: int, dmg: float):
+func setup(start_pos: Vector2, target_pos: Vector2, team_id: int, dmg: float, fire_pos: Vector2):
 	global_position = start_pos
+	attacker_pos = fire_pos
 	direction = (target_pos - start_pos).normalized()
 	target_team = 1 if team_id == 0 else 0
 	damage = dmg
