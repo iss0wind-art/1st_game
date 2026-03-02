@@ -21,9 +21,11 @@ func spawn_siege_walls():
 	var spacing = screen_height / wall_count
 	
 	for i in range(wall_count):
-		if i == 3: continue # 중앙 성문(Gate)은 열어서 통로 확보
 		var wall = siege_wall_scene.instantiate()
 		wall.global_position = Vector2(576, i * spacing + spacing/2)
+		if i == 3: # 중앙 성문(Gate) 설정
+			wall.is_gate = true
+			wall.health = 5000.0 # 성문은 더 튼튼함
 		add_child(wall)
 
 func spawn_units(team: int, center: Vector2, group_name: String):
@@ -43,9 +45,10 @@ func spawn_units(team: int, center: Vector2, group_name: String):
 			else: unit.unit_class = 2 # Archer (비율 상향)
 		elif roll < 0.45: # 10% 엘리트
 			var elite_roll = randf()
-			if elite_roll < 0.3: unit.unit_class = 3 # Cavalry
+			if elite_roll < 0.2: unit.unit_class = 3 # Cavalry
 			elif elite_roll < 0.8: unit.unit_class = 4 # Knight 
-			else: unit.unit_class = 5 # Priest
+			elif elite_roll < 0.9: unit.unit_class = 5 # Priest
+			else: unit.unit_class = 7 # Siege (공성추 추가)
 		else: # 55% 시민
 			unit.unit_class = 6 # Citizen
 			var citizen_roll = randf()

@@ -1,3 +1,5 @@
+[gd_scene format=3 uid="uid://c6r8v3x2x7j1p"]
+
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main_script"]
 [ext_resource type="Script" uid="uid://blq1wde3lhg3o" path="res://scripts/Spawner.gd" id="2_spawner_script"]
 [ext_resource type="PackedScene" uid="uid://b8y4v8x2x7j1n" path="res://scenes/Unit.tscn" id="3_unit_scene"]
