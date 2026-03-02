@@ -1,6 +1,6 @@
 extends CharacterBody2D
 
-enum UnitClass { SWORDMAN, SPEARMAN, ARCHER, CAVALRY, KNIGHT, PRIEST, CITIZEN, SIEGE }
+enum UnitClass { SWORDMAN, SPEARMAN, ARCHER, CAVALRY, KNIGHT, PRIEST, CITIZEN, SIEGE, SUPPLY_WAGON }
 enum CitizenType { MALE, FEMALE, CHILD, OLD }
 
 @export var unit_class: UnitClass = UnitClass.SWORDMAN
@@ -21,6 +21,12 @@ var is_selected: bool = false
 var command_pos: Vector2 = Vector2.ZERO
 var has_command: bool = false
 var command_target_unit: Node2D = null
+
+# 보급 및 전술 변수 (Phase 9 & 10)
+var is_supplied: bool = true
+var supply_timer: float = 15.0 # 보급 없이 버틸 수 있는 시간
+var stationary_timer: float = 0.0 # 매복을 위한 정지 시간 체크
+var is_ambushing: bool = false
 
 # 지형 및 스킬 변수
 var current_elevation: int = 0 
@@ -55,6 +61,10 @@ func _ready():
 	ai_update_timer = randf() * ai_update_interval
 	volley_timer = randf() * 10.0 
 	setup_class_stats()
+	# 보급 수레는 보급 대상 그룹에 추가
+	if unit_class == UnitClass.SUPPLY_WAGON:
+		add_to_group("supply_sources")
+		
 	if team == 0:
 		retreat_pos = safe_zone + Vector2(-150, (randf()-0.5) * 200.0)
 		color = Color.CORNFLOWER_BLUE
@@ -85,18 +95,33 @@ func setup_class_stats():
 			if citizen_type == CitizenType.CHILD: health = 30.0
 		UnitClass.SIEGE:
 			speed = 50.0; attack_range = 50.0; damage = 100.0; health = 500.0; attack_cooldown = 4.0; water_speed_mult = 0.2
+		UnitClass.SUPPLY_WAGON:
+			speed = 70.0; attack_range = 0.0; damage = 0.0; health = 200.0; water_speed_mult = 0.3
 
 func _draw():
-	# [RTS: 선택 효과] 선택된 아군 발밑에 녹색 원
 	if is_selected:
 		draw_arc(Vector2(0, 10), 15, 0, TAU, 32, Color.GREEN, 2.0)
 		
 	var f = 1.0 if facing_right else -1.0
-	var alpha = 0.5 if is_in_water else 1.0
+	var alpha = 0.5 if is_in_water else (0.4 if is_ambushing else 1.0)
 	var current_color = Color(color.r, color.g, color.b, alpha)
 	
+	# [Phase 9: 보급 오라 시각화]
+	if unit_class == UnitClass.SUPPLY_WAGON:
+		draw_arc(Vector2.ZERO, 150, 0, TAU, 64, Color(0.2, 0.6, 1.0, 0.3), 2.0)
+		# 수레 본체
+		draw_rect(Rect2(-15*f, -5, 30*f, 15), Color.SADDLE_BROWN)
+		draw_circle(Vector2(-10*f, 10), 5, Color.BLACK)
+		draw_circle(Vector2(10*f, 10), 5, Color.BLACK)
+		return
+
 	if current_elevation > 0:
 		draw_colored_polygon([Vector2(-3, -25), Vector2(3, -25), Vector2(0, -30)], Color.YELLOW)
+	
+	# 보급 부족 경고 (빨간색 번쩍임)
+	if not is_supplied and Engine.get_frames_drawn() % 30 < 15:
+		draw_circle(Vector2(0, -35), 3, Color.ORANGE_RED)
+
 	if rage_timer > 0: draw_circle(Vector2.ZERO, 20, Color(1, 0, 0, 0.2))
 	if morale_type == 1: draw_circle(Vector2.ZERO, 20, Color(1, 0.8, 0, 0.3))
 	elif morale_type == -1: draw_circle(Vector2.ZERO, 20, Color(0.5, 0.5, 0.5, 0.3))
@@ -158,6 +183,16 @@ func _physics_process(delta):
 	if health <= 0:
 		handle_death()
 		return
+		
+	# [Phase 10: 정지 상태/매복 타이머]
+	if velocity.length() < 10:
+		stationary_timer += delta
+		if stationary_timer >= 10.0 and unit_class != UnitClass.SIEGE:
+			is_ambushing = true
+	else:
+		stationary_timer = 0
+		is_ambushing = false
+
 	if velocity.length() > 5: walk_timer += delta
 	else: walk_timer = 0
 	if attack_anim_progress > 0: attack_anim_progress -= delta * 2.5
@@ -179,15 +214,26 @@ func _physics_process(delta):
 		ai_update_timer = ai_update_interval
 		if not is_dueling: find_closest_target()
 		cached_separation = get_separation_vector()
+		# [Phase 9: 보급 체크]
+		check_supply()
 	
+	# 보급 부족 시 타이머 감소
+	if not is_supplied and unit_class != UnitClass.SUPPLY_WAGON:
+		supply_timer -= delta
+	else:
+		supply_timer = min(supply_timer + delta * 2.0, 15.0)
+
 	var current_target = duel_target if is_dueling else target
 	var current_speed = speed
 	if rage_timer > 0: current_speed *= 2.2 
 	if morale_type == 1: current_speed *= 1.5
 	elif morale_type == -1: current_speed *= 0.6
 	if is_in_water: current_speed *= water_speed_mult
+	
+	# 보급 고갈 시 패널티 (속도 50% 저하)
+	if supply_timer <= 0:
+		current_speed *= 0.5
 
-	# [RTS: 명령 제어] 플레이어 명령이 AI보다 우선함
 	if has_command:
 		var dist_to_command = global_position.distance_to(command_pos)
 		if dist_to_command > 10.0:
@@ -195,10 +241,9 @@ func _physics_process(delta):
 			facing_right = move_dir.x > 0
 			velocity = (move_dir + cached_separation * 1.0).normalized() * current_speed
 		else:
-			has_command = false # 목표 도착
+			has_command = false 
 			velocity = cached_separation * 20.0
 	elif is_instance_valid(command_target_unit):
-		# 강제 공격 명령
 		var distance = global_position.distance_to(command_target_unit.global_position)
 		if distance > attack_range:
 			var move_dir = (command_target_unit.global_position - global_position).normalized()
@@ -207,7 +252,6 @@ func _physics_process(delta):
 		else:
 			velocity = cached_separation * (current_speed * 0.3)
 			if attack_timer <= 0:
-				target = command_target_unit # 공격 함수가 target을 참조하므로 일시 할당
 				perform_attack()
 				attack_timer = attack_cooldown
 				attack_anim_progress = 1.0
@@ -246,11 +290,19 @@ func _physics_process(delta):
 		move_and_slide()
 	queue_redraw()
 
+func check_supply():
+	var supplied_this_tick = false
+	for source in get_tree().get_nodes_in_group("supply_sources"):
+		if source.team == self.team and global_position.distance_to(source.global_position) < 150.0:
+			supplied_this_tick = true
+			break
+	is_supplied = supplied_this_tick
+
 func give_move_command(pos: Vector2):
 	command_pos = pos
 	has_command = true
 	command_target_unit = null
-	is_dueling = false # 조종 시 일기토 해제 (유연성)
+	is_dueling = false 
 
 func give_attack_command(unit: Node2D):
 	command_target_unit = unit
@@ -281,6 +333,17 @@ func perform_attack():
 	var final_damage = damage
 	if rage_timer > 0: final_damage *= 1.5
 	if current_elevation > 0: final_damage *= 1.2
+	
+	# [Phase 10: 매복 치명타] 첫 타격 3배
+	if is_ambushing:
+		final_damage *= 3.0
+		is_ambushing = false
+		stationary_timer = 0
+		print("Ambush Strike!")
+		
+	# 보급 고갈 시 데미지 50% 저하
+	if supply_timer <= 0:
+		final_damage *= 0.5
 	
 	if unit_class == UnitClass.ARCHER and arrow_scene:
 		var distance = global_position.distance_to(current_atk_target.global_position)
@@ -322,6 +385,11 @@ func take_damage_from(amount, attacker_pos):
 	var final_amount = amount
 	var dir_to_attacker = (attacker_pos - global_position).normalized()
 	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
+	
+	# [Phase 10: 수성 방어 이점] 가만히 대기 중에는 정면 방어력 상승 (50% 감소)
+	if velocity.length() < 10 and facing_dir.dot(dir_to_attacker) > 0.0:
+		final_amount *= 0.5
+		
 	if unit_class == UnitClass.ARCHER and attack_anim_progress > 0:
 		if facing_dir.dot(dir_to_attacker) > 0.0: final_amount *= 0.3
 	if facing_dir.dot(dir_to_attacker) > 0.4: final_amount *= 1.5
@@ -331,7 +399,7 @@ func take_damage(amount):
 	health -= amount
 
 func find_closest_target():
-	if unit_class == UnitClass.CITIZEN: return
+	if unit_class == UnitClass.CITIZEN or unit_class == UnitClass.SUPPLY_WAGON: return
 	
 	var enemy_group = "enemies" if team == 0 else "players"
 	var closest_dist = INF

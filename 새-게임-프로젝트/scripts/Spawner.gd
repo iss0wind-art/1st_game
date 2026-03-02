@@ -38,18 +38,19 @@ func spawn_units(team: int, center: Vector2, group_name: String):
 		
 		# 유닛 비율 조정 (한명당 200명 기준)
 		var roll = randf()
-		if roll < 0.40: # 40% 전투병 (정예 보병화)
+		if roll < 0.45: # 45% 전투병 (전투 비중 상향)
 			var combat_roll = randf()
-			if combat_roll < 0.5: unit.unit_class = 0 # Swordman (Buffed frontline)
+			if combat_roll < 0.5: unit.unit_class = 0 # Swordman
 			elif combat_roll < 0.7: unit.unit_class = 1 # Spearman
 			else: unit.unit_class = 2 # Archer
-		elif roll < 0.50: # 10% 엘리트 및 중기계
+		elif roll < 0.60: # 15% 엘리트, 보급 및 중기계
 			var elite_roll = randf()
-			if elite_roll < 0.3: unit.unit_class = 3 # Cavalry
-			elif elite_roll < 0.4: unit.unit_class = 4 # HERO KNIGHT (Very Rare)
-			elif elite_roll < 0.6: unit.unit_class = 5 # Priest
-			else: unit.unit_class = 7 # Siege Engine (Battering Ram)
-		else: # 50% 시민 및 노동력
+			if elite_roll < 0.2: unit.unit_class = 3 # Cavalry
+			elif elite_roll < 0.3: unit.unit_class = 4 # HERO KNIGHT
+			elif elite_roll < 0.5: unit.unit_class = 5 # Priest
+			elif elite_roll < 0.8: unit.unit_class = 8 # SUPPLY WAGON (보급 수레)
+			else: unit.unit_class = 7 # Siege Engine
+		else: # 40% 시민 및 노동력
 			unit.unit_class = 6 # Citizen
 			var citizen_roll = randf()
 			if citizen_roll < 0.3: unit.citizen_type = 0 # Male
