@@ -41,8 +41,8 @@ func spawn_units(team: int, center: Vector2, group_name: String):
 			else: unit.unit_class = 2 # Archer
 		elif roll < 0.4: # 10% 기병/기사/성직자
 			var elite_roll = randf()
-			if elite_roll < 0.4: unit.unit_class = 3 # Cavalry
-			elif elite_roll < 0.7: unit.unit_class = 4 # Knight
+			if elite_roll < 0.3: unit.unit_class = 3 # Cavalry
+			elif elite_roll < 0.8: unit.unit_class = 4 # Knight (비율 증가)
 			else: unit.unit_class = 5 # Priest
 		else: # 60% 시민 (남, 여, 아이, 노인)
 			unit.unit_class = 6 # Citizen
