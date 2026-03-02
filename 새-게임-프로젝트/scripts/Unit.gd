@@ -50,6 +50,13 @@ var morale_type: int = 0
 var is_dueling: bool = false
 var duel_target: Node2D = null
 
+# 피로도 및 전술 변수 (Phase 11-13)
+var stamina: float = 100.0
+var max_stamina: float = 100.0
+var surrounding_enemies_count: int = 0
+var stamina_recovery_rate: float = 5.0
+var stamina_drain_rate: float = 2.0
+
 # 애니메이션
 var walk_timer: float = 0.0
 var walk_speed: float = 10.0
@@ -126,6 +133,14 @@ func _draw():
 	if morale_type == 1: draw_circle(Vector2.ZERO, 20, Color(1, 0.8, 0, 0.3))
 	elif morale_type == -1: draw_circle(Vector2.ZERO, 20, Color(0.5, 0.5, 0.5, 0.3))
 	if is_dueling: draw_arc(Vector2(0, -25), 5, 0, TAU, 32, Color.GOLD, 1.0)
+	
+	# [Phase 11: 피로도 시각화] 지쳤을 때 파란점 (땀) 표시
+	if stamina < 20.0 and Engine.get_frames_drawn() % 20 < 10:
+		draw_circle(Vector2(5, -20), 2, Color.DEEP_SKY_BLUE)
+	
+	# [Phase 12: 포위 시각화] 다구리 당할 때 붉은 테두리
+	if surrounding_enemies_count >= 3:
+		draw_arc(Vector2.ZERO, 18, 0, TAU, 16, Color(1, 0, 0, 0.5), 1.5)
 	
 	var leg_swing = sin(walk_timer * walk_speed) * 8.0 if velocity.length() > 5 else 0.0
 	var arm_swing = cos(walk_timer * walk_speed) * 6.0 if velocity.length() > 5 else 0.0
@@ -210,12 +225,20 @@ func _physics_process(delta):
 			perform_volley()
 			volley_timer = 0.0
 
+	# [Phase 11: 피로도 및 스태미너 관리]
+	if velocity.length() > 20 or attack_anim_progress > 0:
+		stamina = max(0, stamina - stamina_drain_rate * delta)
+	else:
+		stamina = min(max_stamina, stamina + stamina_recovery_rate * delta)
+
 	if ai_update_timer <= 0:
 		ai_update_timer = ai_update_interval
 		if not is_dueling: find_closest_target()
 		cached_separation = get_separation_vector()
 		# [Phase 9: 보급 체크]
 		check_supply()
+		# [Phase 12: 포위 수 체크]
+		update_surrounding_count()
 	
 	# 보급 부족 시 타이머 감소
 	if not is_supplied and unit_class != UnitClass.SUPPLY_WAGON:
@@ -229,6 +252,10 @@ func _physics_process(delta):
 	if morale_type == 1: current_speed *= 1.5
 	elif morale_type == -1: current_speed *= 0.6
 	if is_in_water: current_speed *= water_speed_mult
+	
+	# [Phase 11: 피로도 패널티] (속도 40% 저하)
+	if stamina < 20.0:
+		current_speed *= 0.6
 	
 	# 보급 고갈 시 패널티 (속도 50% 저하)
 	if supply_timer <= 0:
@@ -280,7 +307,11 @@ func _physics_process(delta):
 			facing_right = (current_target.global_position.x - global_position.x) > 0
 			if attack_timer <= 0:
 				perform_attack()
-				attack_timer = attack_cooldown
+				# [Phase 11: 피로도 공격 패널티] (쿨타임 1.5배)
+				var final_cd = attack_cooldown
+				if stamina < 20.0: final_cd *= 1.5
+				attack_timer = final_cd
+				
 				if is_dueling or rage_timer > 0 or morale_type == 1: attack_timer *= 0.6
 				attack_anim_progress = 1.0
 	else:
@@ -297,6 +328,14 @@ func check_supply():
 			supplied_this_tick = true
 			break
 	is_supplied = supplied_this_tick
+
+func update_surrounding_count():
+	var enemy_group = "enemies" if team == 0 else "players"
+	var count = 0
+	for enemy in get_tree().get_nodes_in_group(enemy_group):
+		if global_position.distance_to(enemy.global_position) < 60.0:
+			count += 1
+	surrounding_enemies_count = count
 
 func give_move_command(pos: Vector2):
 	command_pos = pos
@@ -334,6 +373,23 @@ func perform_attack():
 	if rage_timer > 0: final_damage *= 1.5
 	if current_elevation > 0: final_damage *= 1.2
 	
+	# [Phase 13: 병종 상성 (Counter-Tactics)]
+	if is_instance_valid(current_atk_target) and current_atk_target is CharacterBody2D:
+		var target_class = current_atk_target.unit_class
+		match unit_class:
+			UnitClass.SPEARMAN:
+				if target_class == UnitClass.CAVALRY or target_class == UnitClass.KNIGHT:
+					final_damage *= 2.5 # 창병은 기마병에게 치명적
+			UnitClass.CAVALRY:
+				if target_class == UnitClass.ARCHER:
+					final_damage *= 2.0 # 기병은 궁수를 유린함
+			UnitClass.ARCHER:
+				if target_class == UnitClass.SWORDMAN or target_class == UnitClass.SPEARMAN:
+					final_damage *= 1.3 # 궁수는 보병 대열을 흔듬
+			UnitClass.SWORDMAN:
+				if target_class == UnitClass.SPEARMAN:
+					final_damage *= 1.3 # 검사는 근접전에서 창병보다 유리함
+
 	# [Phase 10: 매복 치명타] 첫 타격 3배
 	if is_ambushing:
 		final_damage *= 3.0
@@ -383,6 +439,15 @@ func perform_volley():
 
 func take_damage_from(amount, attacker_pos):
 	var final_amount = amount
+	
+	# [Phase 12: 포위(Surrounding) 데미지 증폭] 사장님 지침: 다구리에 장사 없다
+	# 주변에 적군 3명 이상일 때 명당 20%씩 추가 데미지
+	if surrounding_enemies_count >= 3:
+		var bonus = (surrounding_enemies_count - 2) * 0.2
+		final_amount *= (1.0 + bonus)
+		if Engine.get_frames_drawn() % 60 == 0:
+			print("Surrounded! Damage taken increased by ", bonus * 100, "%")
+
 	var dir_to_attacker = (attacker_pos - global_position).normalized()
 	var facing_dir = Vector2.RIGHT if facing_right else Vector2.LEFT
 	
