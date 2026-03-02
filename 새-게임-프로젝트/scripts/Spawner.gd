@@ -5,7 +5,7 @@ extends Node2D
 @export var player_spawn_center: Vector2 = Vector2(250, 324)
 @export var enemy_spawn_center: Vector2 = Vector2(900, 324)
 @export var spawn_radius: float = 300.0
-@export var unit_count_per_team: int = 600
+@export var unit_count_per_team: int = 200
 
 func _ready():
 	print("Spawner: Starting to spawn units and walls...")

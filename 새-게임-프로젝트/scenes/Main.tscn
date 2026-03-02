@@ -18,7 +18,7 @@ siege_wall_scene = ExtResource("3_siege_wall_scene")
 player_spawn_center = Vector2(250, 324)
 enemy_spawn_center = Vector2(900, 324)
 spawn_radius = 300.0
-unit_count_per_team = 600
+unit_count_per_team = 200
 
 [node name="Camera2D" type="Camera2D" parent="."]
 anchor_mode = 0
